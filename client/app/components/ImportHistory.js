@@ -6,6 +6,8 @@ import { api } from '../services/api';
 //......
 export default function ImportHistory() {
   const [history, setHistory] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
   const [triggering, setTriggering] = useState(false);
@@ -22,7 +24,11 @@ export default function ImportHistory() {
         api.getHistory(),
         api.getQueueStats(),
       ]);
-      setHistory(historyData);
+      // `api.getHistory()` returns an array of import logs on the server.
+      setHistory(historyData || []);
+      // Adjust current page if necessary after new data arrives
+      const totalPages = Math.max(1, Math.ceil((historyData?.length || 0) / pageSize));
+      setCurrentPage((p) => (p > totalPages ? totalPages : p));
       setStats(statsData);
       setLoading(false);
     } catch (error) {
@@ -153,8 +159,15 @@ export default function ImportHistory() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {history.map((log) => (
-              <tr key={log._id} className="hover:bg-gray-50">
+            {(() => {
+              const total = history.length;
+              const totalPages = Math.max(1, Math.ceil(total / pageSize));
+              const startIndex = (currentPage - 1) * pageSize;
+              const endIndex = Math.min(startIndex + pageSize, total);
+              const pageItems = history.slice(startIndex, endIndex);
+
+              return pageItems.map((log) => (
+                <tr key={log._id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 text-sm text-blue-600 truncate max-w-xs">
                   {log.fileName}
                 </td>
@@ -188,11 +201,103 @@ export default function ImportHistory() {
                     {log.status}
                   </span>
                 </td>
-              </tr>
-            ))}
+                </tr>
+              ));
+            })()}
           </tbody>
         </table>
+
+        {/* Pagination controls - frontend-only */}
+        <div className="flex items-center justify-between p-4 border-t bg-gray-50">
+          <div className="text-sm text-gray-600">
+            {history.length === 0 ? (
+              'No import history'
+            ) : (
+              <>
+                Showing <span className="font-medium">{Math.min((currentPage - 1) * pageSize + 1, history.length)}</span>
+                {' - '}
+                <span className="font-medium">{Math.min(currentPage * pageSize, history.length)}</span>
+                {' of '}
+                <span className="font-medium">{history.length}</span>
+              </>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                const newSize = parseInt(e.target.value, 10) || 10;
+                setPageSize(newSize);
+                setCurrentPage(1);
+              }}
+              className="border rounded p-1 text-sm"
+            >
+              <option value={5}>5 / page</option>
+              <option value={10}>10 / page</option>
+              <option value={20}>20 / page</option>
+              <option value={50}>50 / page</option>
+            </select>
+
+            <Pagination
+              total={history.length}
+              pageSize={pageSize}
+              currentPage={currentPage}
+              onPageChange={(p) => setCurrentPage(p)}
+            />
+          </div>
+        </div>
       </div>
+    </div>
+  );
+}
+
+
+function Pagination({ total, pageSize, currentPage, onPageChange }) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  const makePages = () => {
+    const pages = [];
+    const maxButtons = 5;
+    let start = Math.max(1, currentPage - Math.floor(maxButtons / 2));
+    let end = start + maxButtons - 1;
+    if (end > totalPages) {
+      end = totalPages;
+      start = Math.max(1, end - maxButtons + 1);
+    }
+    for (let i = start; i <= end; i++) pages.push(i);
+    return pages;
+  };
+
+  if (totalPages === 1) return null;
+
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+        disabled={currentPage === 1}
+        className={`px-3 py-1 rounded border text-sm ${currentPage === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-100'}`}
+      >
+        Prev
+      </button>
+
+      {makePages().map((p) => (
+        <button
+          key={p}
+          onClick={() => onPageChange(p)}
+          className={`px-3 py-1 rounded border text-sm ${p === currentPage ? 'bg-blue-600 text-white border-blue-600' : 'hover:bg-gray-100'}`}
+        >
+          {p}
+        </button>
+      ))}
+
+      <button
+        onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+        disabled={currentPage === totalPages}
+        className={`px-3 py-1 rounded border text-sm ${currentPage === totalPages ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-100'}`}
+      >
+        Next
+      </button>
     </div>
   );
 }
